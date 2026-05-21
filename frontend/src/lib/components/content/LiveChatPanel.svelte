@@ -17,6 +17,46 @@
   let textareaRef: HTMLTextAreaElement | undefined = $state(undefined);
   let fileInputRef: HTMLInputElement | undefined = $state(undefined);
   let queuedImages: Array<{ id: string; file: File; url: string }> = $state([]);
+  let draftSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function saveDraftToStorage(sid: string, text: string) {
+    try {
+      if (text) {
+        localStorage.setItem(`livechat-draft:${sid}`, text);
+      } else {
+        localStorage.removeItem(`livechat-draft:${sid}`);
+      }
+    } catch { /* storage full */ }
+  }
+
+  function loadDraftFromStorage(sid: string): string {
+    try {
+      return localStorage.getItem(`livechat-draft:${sid}`) ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  function clearDraftFromStorage(sid: string) {
+    try { localStorage.removeItem(`livechat-draft:${sid}`); } catch { /* noop */ }
+  }
+
+  function debounceSaveDraft() {
+    if (draftSaveTimer) clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(() => {
+      if (sessionId) saveDraftToStorage(sessionId, draft);
+      draftSaveTimer = null;
+    }, 300);
+  }
+
+  // Load draft when sessionId changes
+  $effect(() => {
+    const sid = sessionId;
+    if (sid) {
+      draft = loadDraftFromStorage(sid);
+      historyIndex = null;
+    }
+  });
 
   // Sending state
   let sending = $derived(liveSession.sending);
@@ -130,6 +170,7 @@
     draft = "";
     queuedImages = [];
     historyIndex = null;
+    clearDraftFromStorage(sessionId);
 
     await liveSession.sendWithImages(content, images);
   }
@@ -147,6 +188,14 @@
   }
 
   let replyAnswers: Record<string, string> = $state({});
+  let expandedDiffs: Set<string> = $state(new Set());
+
+  function toggleDiff(reqId: string) {
+    const next = new Set(expandedDiffs);
+    if (next.has(reqId)) next.delete(reqId);
+    else next.add(reqId);
+    expandedDiffs = next;
+  }
 
   async function replyToRequest(req: LivePendingRequest) {
     if (!req.id) return;
@@ -251,6 +300,27 @@
         <div class="pending-command">{req.command}</div>
       {/if}
 
+      {#if req.kind === "file_change_approval" && req.file_path}
+        <div class="pending-file-path">{req.file_path}</div>
+      {/if}
+
+      {#if req.kind === "file_change_approval" && req.changes}
+        {@const lines = req.changes.split("\n")}
+        {@const isLong = lines.length > 20}
+        {@const isExpanded = expandedDiffs.has(req.id)}
+        {@const visibleLines = isLong && !isExpanded ? lines.slice(0, 20) : lines}
+        <div class="pending-diff">
+          {#each visibleLines as line}
+            <div class="diff-line" class:diff-add={line.startsWith("+")} class:diff-del={line.startsWith("-")} class:diff-hunk={line.startsWith("@@")}>{line}</div>
+          {/each}
+          {#if isLong}
+            <button class="diff-toggle" onclick={() => toggleDiff(req.id)}>
+              {isExpanded ? "Show less" : `Show ${lines.length - 20} more lines`}
+            </button>
+          {/if}
+        </div>
+      {/if}
+
       {#if req.kind === "command_approval" || req.kind === "file_change_approval"}
         <div class="pending-actions">
           <button
@@ -352,6 +422,7 @@
       bind:value={draft}
       disabled={!canSend}
       onkeydown={handleKeydown}
+      oninput={debounceSaveDraft}
       onpaste={handlePaste}
       ondrop={handleDrop}
       ondragover={handleDragover}
@@ -487,6 +558,62 @@
     color: var(--text-primary);
     white-space: pre-wrap;
     word-break: break-all;
+  }
+
+  .pending-file-path {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .pending-diff {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    background: var(--bg-default);
+    border: 1px solid var(--border-muted);
+    border-radius: 4px;
+    padding: 4px 0;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .diff-line {
+    padding: 0 8px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.5;
+  }
+
+  .diff-add {
+    background: color-mix(in srgb, #3fb950 12%, transparent);
+    color: #3fb950;
+  }
+
+  .diff-del {
+    background: color-mix(in srgb, var(--accent-red, #f85149) 12%, transparent);
+    color: var(--accent-red, #f85149);
+  }
+
+  .diff-hunk {
+    color: var(--accent-blue);
+    opacity: 0.8;
+  }
+
+  .diff-toggle {
+    display: block;
+    width: 100%;
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    color: var(--accent-blue);
+    font-size: 11px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .diff-toggle:hover {
+    background: var(--bg-surface-hover, var(--bg-tertiary));
   }
 
   .pending-actions {

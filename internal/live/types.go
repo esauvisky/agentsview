@@ -134,6 +134,8 @@ type PendingRequest struct {
 	Command   string             `json:"command,omitempty"`
 	Cwd       string             `json:"cwd,omitempty"`
 	GrantRoot string             `json:"grant_root,omitempty"`
+	FilePath  string             `json:"file_path,omitempty"`
+	Changes   string             `json:"changes,omitempty"`
 	Questions []PendingQuestion  `json:"questions,omitempty"`
 }
 

@@ -599,12 +599,20 @@ func buildPendingRequest(requestID, method string, paramsRaw json.RawMessage) Pe
 		var p struct {
 			Reason    string `json:"reason"`
 			GrantRoot string `json:"grantRoot"`
+			FilePath  string `json:"filePath"`
+			Path      string `json:"path"`
+			Changes   string `json:"changes"`
 		}
 		_ = json.Unmarshal(paramsRaw, &p)
 		req.Kind = PendingRequestFileChange
 		req.Title = "File change approval"
 		req.Body = p.Reason
 		req.GrantRoot = p.GrantRoot
+		req.FilePath = p.FilePath
+		if req.FilePath == "" {
+			req.FilePath = p.Path
+		}
+		req.Changes = p.Changes
 	case "item/permissions/requestApproval":
 		var p struct {
 			Cwd    string `json:"cwd"`

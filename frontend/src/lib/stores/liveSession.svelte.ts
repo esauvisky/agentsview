@@ -57,8 +57,8 @@ class LiveSessionStore {
   provisionalTurns: ProvisionalTurn[] = $state([]);
 
   /**
-   * Prompt history for the current session (in-memory, not persisted).
-   * Most recent entry is at the end.
+   * Prompt history for the current session, persisted to localStorage.
+   * Most recent entry is at the end. Max 50 entries per session.
    */
   promptHistory: string[] = $state([]);
 
@@ -84,6 +84,7 @@ class LiveSessionStore {
     this.sessionId = sessionId;
     this.loading = true;
     this.error = null;
+    this.loadHistory(sessionId);
 
     try {
       this.state = await api.getLiveState(sessionId);
@@ -387,7 +388,31 @@ class LiveSessionStore {
   private appendToHistory(prompt: string) {
     const last = this.promptHistory[this.promptHistory.length - 1];
     if (last === prompt) return;
-    this.promptHistory = [...this.promptHistory, prompt];
+    const next = [...this.promptHistory, prompt];
+    if (next.length > 50) next.splice(0, next.length - 50);
+    this.promptHistory = next;
+    this.saveHistory();
+  }
+
+  private loadHistory(sessionId: string) {
+    try {
+      const raw = localStorage.getItem(`livechat-history:${sessionId}`);
+      if (raw) this.promptHistory = JSON.parse(raw);
+    } catch {
+      // Corrupt data — ignore
+    }
+  }
+
+  private saveHistory() {
+    if (!this.sessionId) return;
+    try {
+      localStorage.setItem(
+        `livechat-history:${this.sessionId}`,
+        JSON.stringify(this.promptHistory),
+      );
+    } catch {
+      // Storage full — ignore
+    }
   }
 }
 

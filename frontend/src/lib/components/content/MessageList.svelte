@@ -32,6 +32,39 @@
   let containerRef: HTMLDivElement | undefined = $state(undefined);
   let scrollRaf: number | null = $state(null);
   let lastScrollRequest = 0;
+  let expandedToolCalls: Set<string> = $state(new Set());
+
+  function toggleToolCallDetail(itemId: string) {
+    const next = new Set(expandedToolCalls);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    expandedToolCalls = next;
+  }
+
+  function formatToolInput(tc: { tool_name: string; input_json?: string; category?: string }): string {
+    if (!tc.input_json) return "";
+    try {
+      const parsed = JSON.parse(tc.input_json);
+      if (tc.tool_name === "exec_command" && parsed.command) {
+        return `$ ${parsed.command}${parsed.cwd ? `\n(cwd: ${parsed.cwd})` : ""}`;
+      }
+      if (tc.tool_name === "apply_patch") {
+        const parts: string[] = [];
+        if (parsed.filePath || parsed.path) parts.push(parsed.filePath ?? parsed.path);
+        if (parsed.changes) parts.push(parsed.changes);
+        if (parsed.reason) parts.push(`Reason: ${parsed.reason}`);
+        return parts.join("\n");
+      }
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return tc.input_json;
+    }
+  }
+
+  function truncate(text: string, max: number): { text: string; truncated: boolean } {
+    if (text.length <= max) return { text, truncated: false };
+    return { text: text.slice(0, max), truncated: true };
+  }
 
   let baseMessages: Message[] = $derived.by(() =>
     messages.messages.filter((m) => !isSystemMessage(m)),
@@ -461,8 +494,14 @@
         </div>
 
         {#each turn.toolCalls as tc (tc.itemId)}
+          {@const hasDetail = !!(tc.toolCall.input_json || tc.toolCall.result_content)}
+          {@const isExpanded = expandedToolCalls.has(tc.itemId)}
           <div class="provisional-row">
-            <div class="provisional-tool">
+            <div
+              class="provisional-tool"
+              class:provisional-tool-expandable={hasDetail}
+              onclick={() => hasDetail && toggleToolCallDetail(tc.itemId)}
+            >
               {#if tc.status === "inProgress"}
                 <span class="provisional-spinner"></span>
               {:else}
@@ -472,7 +511,24 @@
               {#if tc.status === "inProgress"}
                 <span class="provisional-tool-dur">{formatDuration(Math.max(0, liveTick.now - tc.startedAt))}</span>
               {/if}
+              {#if hasDetail}
+                <span class="provisional-tool-chevron" class:expanded={isExpanded}>&#x25B8;</span>
+              {/if}
             </div>
+            {#if isExpanded}
+              <div class="provisional-tool-detail">
+                {#if tc.toolCall.input_json}
+                  {@const input = formatToolInput(tc.toolCall)}
+                  {#if input}
+                    <pre class="tool-detail-block">{input}</pre>
+                  {/if}
+                {/if}
+                {#if tc.toolCall.result_content}
+                  {@const result = truncate(tc.toolCall.result_content, 500)}
+                  <pre class="tool-detail-block tool-detail-result">{result.text}{#if result.truncated}...{/if}</pre>
+                {/if}
+              </div>
+            {/if}
           </div>
         {/each}
 
@@ -561,6 +617,15 @@
     font-family: var(--font-mono);
   }
 
+  .provisional-tool-expandable {
+    cursor: pointer;
+    border-radius: 4px;
+  }
+
+  .provisional-tool-expandable:hover {
+    background: var(--bg-surface-hover, var(--bg-tertiary));
+  }
+
   .provisional-tool-name {
     color: var(--text-primary);
   }
@@ -573,6 +638,43 @@
   .provisional-done {
     color: var(--accent-green, #3fb950);
     font-size: 13px;
+  }
+
+  .provisional-tool-chevron {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.15s;
+    margin-left: auto;
+  }
+
+  .provisional-tool-chevron.expanded {
+    transform: rotate(90deg);
+  }
+
+  .provisional-tool-detail {
+    padding: 4px 20px 4px 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .tool-detail-block {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    background: var(--bg-default);
+    border: 1px solid var(--border-muted);
+    border-radius: 4px;
+    padding: 6px 8px;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 0;
+  }
+
+  .tool-detail-result {
+    border-left: 2px solid var(--accent-green, #3fb950);
   }
 
   .provisional-meta {

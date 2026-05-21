@@ -1418,6 +1418,8 @@ export interface LivePendingRequest {
   command?: string;
   cwd?: string;
   grant_root?: string;
+  file_path?: string;
+  changes?: string;
   questions?: LivePendingQuestion[];
 }
 
