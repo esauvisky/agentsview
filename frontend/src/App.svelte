@@ -7,6 +7,8 @@
   import SessionList from "./lib/components/sidebar/SessionList.svelte";
   import MessageList from "./lib/components/content/MessageList.svelte";
   import SessionVitals from "./lib/components/content/SessionVitals.svelte";
+  import LiveChatPanel from "./lib/components/content/LiveChatPanel.svelte";
+  import { liveSession } from "./lib/stores/liveSession.svelte.js";
   import { sessionActivity } from "./lib/stores/sessionActivity.svelte.js";
   import { sessionTiming } from "./lib/stores/sessionTiming.svelte.js";
   import CommandPalette from "./lib/components/command-palette/CommandPalette.svelte";
@@ -87,6 +89,7 @@
         messages.loadSession(id);
         sessions.loadChildSessions(id);
         sessionTiming.load(id);
+        void liveSession.watch(id);
         sync.watchSession(
           id,
           () => {
@@ -111,6 +114,7 @@
         sessions.childSessions = new Map();
         sync.unwatchSession();
         pins.clearSession();
+        liveSession.clear();
       }
     });
   });
@@ -445,6 +449,9 @@
     {#snippet vitals()}
       {#if sessions.activeSessionId}
         <SessionVitals sessionId={sessions.activeSessionId} />
+        {#if liveSession.state?.enabled && liveSession.state?.available}
+          <LiveChatPanel sessionId={sessions.activeSessionId} />
+        {/if}
       {/if}
     {/snippet}
   </ThreeColumnLayout>

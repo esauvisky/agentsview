@@ -17,6 +17,7 @@ type settingsResponse struct {
 	Port             int                 `json:"port"`
 	AuthToken        string              `json:"auth_token,omitempty"`
 	RequireAuth      bool                `json:"require_auth"`
+	LiveChatEnabled  bool                `json:"live_chat_enabled"`
 }
 
 // terminalResponse mirrors config.TerminalConfig for JSON output.
@@ -60,6 +61,7 @@ func (s *Server) handleGetSettings(
 		Host:             s.cfg.Host,
 		Port:             s.cfg.Port,
 		RequireAuth:      s.cfg.RequireAuth,
+		LiveChatEnabled:  s.cfg.LiveChatEnabled,
 	}
 
 	// Only expose auth_token to localhost requests, never to remote clients.
@@ -74,9 +76,10 @@ func (s *Server) handleGetSettings(
 // settingsUpdateRequest is the JSON body for PUT /api/v1/settings.
 // All fields are optional; only non-nil fields are applied.
 type settingsUpdateRequest struct {
-	Terminal    *terminalResponse `json:"terminal,omitempty"`
-	AuthToken   *string           `json:"auth_token,omitempty"`
-	RequireAuth *bool             `json:"require_auth,omitempty"`
+	Terminal        *terminalResponse `json:"terminal,omitempty"`
+	AuthToken       *string           `json:"auth_token,omitempty"`
+	RequireAuth     *bool             `json:"require_auth,omitempty"`
+	LiveChatEnabled *bool             `json:"live_chat_enabled,omitempty"`
 }
 
 func (s *Server) handleUpdateSettings(
@@ -112,6 +115,10 @@ func (s *Server) handleUpdateSettings(
 
 	if req.RequireAuth != nil {
 		patch["require_auth"] = *req.RequireAuth
+	}
+
+	if req.LiveChatEnabled != nil {
+		patch["live_chat_enabled"] = *req.LiveChatEnabled
 	}
 
 	if len(patch) == 0 {

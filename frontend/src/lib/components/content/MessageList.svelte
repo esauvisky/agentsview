@@ -22,6 +22,11 @@
   import { inSessionSearch } from "../../stores/inSessionSearch.svelte.js";
   import { sessionActivity } from "../../stores/sessionActivity.svelte.js";
   import SessionFindBar from "./SessionFindBar.svelte";
+  import { liveSession } from "../../stores/liveSession.svelte.js";
+  import { renderMarkdown } from "../../utils/markdown.js";
+  import { displayToolName } from "../../utils/toolDisplay.js";
+  import { formatDuration } from "../../utils/duration.js";
+  import { liveTick } from "../../stores/liveTick.svelte.js";
 
   let containerRef: HTMLDivElement | undefined = $state(undefined);
   let scrollRaf: number | null = $state(null);
@@ -327,6 +332,35 @@
       ? inSessionSearch.query
       : "",
   );
+
+  // Show provisional turns only for the active session
+  let provisionalTurns = $derived.by(() => {
+    if (liveSession.sessionId !== sessions.activeSessionId) return [];
+    return liveSession.provisionalTurns;
+  });
+
+  // Reconcile provisional turns whenever the persisted transcript changes
+  $effect(() => {
+    void messages.messages.length;
+    liveSession.reconcileWithMessages(messages.messages);
+  });
+
+  // Auto-scroll to bottom when provisional content changes (new text/tool calls)
+  $effect(() => {
+    const totalContent = provisionalTurns.reduce(
+      (acc, t) => acc + t.assistantText.length + t.toolCalls.length,
+      0,
+    );
+    void totalContent;
+    if (!containerRef || provisionalTurns.length === 0) return;
+    const el = containerRef;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distFromBottom < 200) {
+      requestAnimationFrame(() => {
+        if (containerRef) containerRef.scrollTop = containerRef.scrollHeight;
+      });
+    }
+  });
 </script>
 
 {#if !sessions.activeSessionId}
@@ -400,6 +434,64 @@
       {/each}
     </div>
   </div>
+
+  {#if provisionalTurns.length > 0}
+    <div class="provisional-section">
+      {#each provisionalTurns as turn (turn.id)}
+        <div class="provisional-row">
+          <div class="message is-user provisional" style="border-left-color: var(--accent-blue); background: var(--user-bg);">
+            <div class="message-header">
+              <span class="role-icon" style="background: var(--accent-blue);">U</span>
+              <span class="role-label" style="color: var(--accent-blue);">User</span>
+              {#if turn.imageCount > 0}
+                <span class="provisional-meta">{turn.imageCount} image{turn.imageCount > 1 ? "s" : ""}</span>
+              {/if}
+            </div>
+            {#if turn.userContent}
+              <div class="message-body">
+                <div class="text-content markdown">{@html renderMarkdown(turn.userContent)}</div>
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        {#each turn.toolCalls as tc (tc.itemId)}
+          <div class="provisional-row">
+            <div class="provisional-tool">
+              {#if tc.status === "inProgress"}
+                <span class="provisional-spinner"></span>
+              {:else}
+                <span class="provisional-done">&#x2713;</span>
+              {/if}
+              <span class="provisional-tool-name">{displayToolName(tc.toolCall)}</span>
+              {#if tc.status === "inProgress"}
+                <span class="provisional-tool-dur">{formatDuration(Math.max(0, liveTick.now - tc.startedAt))}</span>
+              {/if}
+            </div>
+          </div>
+        {/each}
+
+        {#if turn.assistantText || (turn.isStreaming && turn.toolCalls.length === 0)}
+          <div class="provisional-row">
+            <div class="message provisional" style="border-left-color: var(--accent-purple); background: var(--assistant-bg);">
+              <div class="message-header">
+                <span class="role-icon" style="background: var(--accent-purple);">A</span>
+                <span class="role-label" style="color: var(--accent-purple);">Assistant</span>
+              </div>
+              <div class="message-body">
+                {#if turn.assistantText}
+                  <div class="text-content markdown">{@html renderMarkdown(turn.assistantText)}</div>
+                {/if}
+                {#if turn.isStreaming}
+                  <span class="stream-cursor"></span>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -439,6 +531,78 @@
   .empty-text {
     font-size: 14px;
     font-weight: 500;
+  }
+
+  /* ── Provisional (live streaming) section ── */
+  .provisional-section {
+    padding: 0 0 8px;
+  }
+
+  .provisional-row {
+    padding: 5px 12px;
+  }
+
+  .message.provisional {
+    opacity: 0.92;
+  }
+
+  .provisional-tool {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+  }
+
+  .provisional-tool-name {
+    color: var(--text-primary);
+  }
+
+  .provisional-tool-dur {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .provisional-done {
+    color: var(--accent-green, #3fb950);
+    font-size: 13px;
+  }
+
+  .provisional-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  @keyframes provisional-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .provisional-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-muted);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: provisional-spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes stream-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .stream-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: var(--accent-purple);
+    border-radius: 1px;
+    animation: stream-blink 1s ease-in-out infinite;
+    vertical-align: text-bottom;
   }
 
   /* ── Compact layout ── */

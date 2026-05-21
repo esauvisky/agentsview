@@ -3,6 +3,7 @@ import {
   extractToolParamMeta,
   generateFallbackContent,
 } from "./tool-params.js";
+import { stripTrailingMemoryCitation } from "./content-parser.js";
 
 /**
  * Format a message for clipboard copy, including tool call content.
@@ -11,7 +12,7 @@ export function formatMessageForCopy(message: Message): string {
   const parts: string[] = [];
 
   if (message.content) {
-    parts.push(message.content);
+    parts.push(stripTrailingMemoryCitation(message.content));
   }
 
   if (message.tool_calls?.length) {

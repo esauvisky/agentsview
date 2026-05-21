@@ -17,6 +17,7 @@ import (
 	"github.com/wesm/agentsview/internal/config"
 	"github.com/wesm/agentsview/internal/db"
 	"github.com/wesm/agentsview/internal/insight"
+	"github.com/wesm/agentsview/internal/live"
 	"github.com/wesm/agentsview/internal/service"
 	"github.com/wesm/agentsview/internal/sync"
 	"github.com/wesm/agentsview/internal/web"
@@ -51,6 +52,8 @@ type Server struct {
 	generateStreamFunc insight.GenerateStreamFunc
 	spaFS              fs.FS
 	spaHandler         http.Handler
+
+	liveManager *live.Manager
 
 	// handlerDelay is injected before each timeout-wrapped
 	// handler, used only by tests to guarantee handlers
@@ -114,6 +117,9 @@ func New(
 	for _, opt := range opts {
 		opt(s)
 	}
+	if s.liveManager == nil {
+		s.liveManager = newDefaultLiveManager(cfg, database)
+	}
 	s.routes()
 	return s
 }
@@ -163,6 +169,11 @@ func WithBroadcaster(b *Broadcaster) Option {
 // allowing tests to substitute a deterministic stub.
 func WithUpdateChecker(f UpdateCheckFunc) Option {
 	return func(s *Server) { s.updateCheckFn = f }
+}
+
+// WithLiveManager overrides the live session manager (for tests).
+func WithLiveManager(m *live.Manager) Option {
+	return func(s *Server) { s.liveManager = m }
 }
 
 // WithBasePath sets a URL prefix for reverse-proxy deployments.
@@ -331,6 +342,32 @@ func (s *Server) routes() {
 	s.mux.HandleFunc(
 		"GET /api/v1/assets/{filename}",
 		s.handleGetAsset,
+	)
+
+	// Live session chat
+	s.mux.Handle(
+		"GET /api/v1/sessions/{id}/live", s.withTimeout(s.handleGetLiveState),
+	)
+	s.mux.Handle(
+		"POST /api/v1/sessions/{id}/live/connect", s.withTimeout(s.handleConnectLive),
+	)
+	s.mux.Handle(
+		"POST /api/v1/sessions/{id}/live/send", s.withTimeout(s.handleSendLiveMessage),
+	)
+	s.mux.Handle(
+		"POST /api/v1/sessions/{id}/live/stop", s.withTimeout(s.handleStopLiveTurn),
+	)
+	s.mux.Handle(
+		"POST /api/v1/sessions/{id}/live/requests/{requestID}/approve",
+		s.withTimeout(s.handleApproveLiveRequest),
+	)
+	s.mux.Handle(
+		"POST /api/v1/sessions/{id}/live/requests/{requestID}/reply",
+		s.withTimeout(s.handleReplyLiveRequest),
+	)
+	// SSE: no timeout wrapper — long-lived connection.
+	s.mux.HandleFunc(
+		"GET /api/v1/sessions/{id}/live/events", s.handleWatchLive,
 	)
 
 	// SPA fallback: serve embedded frontend

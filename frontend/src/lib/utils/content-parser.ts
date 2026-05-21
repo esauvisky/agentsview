@@ -1,6 +1,17 @@
 import type { Message, ToolCall } from "../api/types.js";
 import { LRUCache } from "./cache.js";
 
+/** Matches one or more trailing <oai-mem-citation> blocks at the end of
+ *  a string. The greedy [\s\S]* ensures ALL contiguous citations are
+ *  stripped in a single pass. */
+const TRAILING_MEMORY_CITATION_RE =
+  /\n*<oai-mem-citation>[\s\S]*<\/oai-mem-citation>\s*$/;
+
+/** Strip trailing memory citations inserted by OpenAI memory feature. */
+export function stripTrailingMemoryCitation(text: string): string {
+  return text.replace(TRAILING_MEMORY_CITATION_RE, "");
+}
+
 export type SegmentType = "text" | "thinking" | "tool" | "code" | "skill";
 
 export interface ContentSegment {
@@ -170,7 +181,7 @@ export function isToolOnly(msg: Message): boolean {
     toolOnlyCache.set(key, false);
     return false;
   }
-  const stripped = msg.content
+  const stripped = stripTrailingMemoryCitation(msg.content)
     .replace(THINKING_MARKED_RE, "")
     .replace(THINKING_LEGACY_RE, "")
     .replace(TOOL_RE, "")
@@ -365,6 +376,8 @@ export function parseContent(
   messageId?: number,
   contentLength?: number,
 ): ContentSegment[] {
+  if (!text) return [];
+  text = stripTrailingMemoryCitation(text);
   if (!text) return [];
 
   const cacheKey =

@@ -100,6 +100,7 @@ type Config struct {
 	Terminal             TerminalConfig         `json:"terminal,omitempty" toml:"terminal"`
 	AuthToken            string                 `json:"auth_token,omitempty" toml:"auth_token"`
 	RequireAuth          bool                   `json:"require_auth" toml:"require_auth"`
+	LiveChatEnabled      bool                   `json:"live_chat_enabled" toml:"live_chat_enabled"`
 	NoBrowser            bool                   `json:"no_browser" toml:"no_browser"`
 	DisableUpdateCheck   bool                   `json:"disable_update_check" toml:"disable_update_check"`
 	NoSync               bool                   `json:"-" toml:"-"`
@@ -368,6 +369,7 @@ func (c *Config) loadFile() error {
 		Terminal                       TerminalConfig             `toml:"terminal"`
 		AuthToken                      string                     `toml:"auth_token"`
 		RequireAuth                    bool                       `toml:"require_auth"`
+		LiveChatEnabled                bool                       `toml:"live_chat_enabled"`
 		RemoteAccess                   bool                       `toml:"remote_access"`
 		DisableUpdateCheck             bool                       `toml:"disable_update_check"`
 		PG                             PGConfig                   `toml:"pg"`
@@ -411,6 +413,7 @@ func (c *Config) loadFile() error {
 		c.AuthToken = file.AuthToken
 	}
 	c.RequireAuth = file.RequireAuth || file.RemoteAccess
+	c.LiveChatEnabled = file.LiveChatEnabled
 	c.DisableUpdateCheck = file.DisableUpdateCheck
 	// Merge pg field-by-field so env vars override only
 	// the fields they set, preserving config-file settings.
@@ -1243,6 +1246,11 @@ func (c *Config) SaveSettings(patch map[string]any) error {
 	if v, ok := patch["require_auth"]; ok {
 		if b, ok := v.(bool); ok {
 			c.RequireAuth = b
+		}
+	}
+	if v, ok := patch["live_chat_enabled"]; ok {
+		if b, ok := v.(bool); ok {
+			c.LiveChatEnabled = b
 		}
 	}
 	return nil

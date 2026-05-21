@@ -816,6 +816,7 @@ export interface AppSettings {
   port: number;
   auth_token?: string;
   require_auth?: boolean;
+  live_chat_enabled?: boolean;
 }
 
 export function getSettings(): Promise<AppSettings> {
@@ -1386,4 +1387,181 @@ export function getUsageTopSessions(
   params: UsageTopSessionsParams,
 ): Promise<TopUsageSessionsResponse> {
   return fetchJSON(`/usage/top-sessions${buildQuery({ ...params })}`);
+}
+
+/* Live session chat */
+
+export interface LiveState {
+  enabled: boolean;
+  available: boolean;
+  state?: "offline" | "starting" | "live" | "blocked" | "degraded" | "dead";
+  turn_active?: boolean;
+  blocked_reason?: string;
+  recreated_count?: number;
+  unsupported_note?: string;
+  pending_requests?: LivePendingRequest[];
+}
+
+export interface LivePendingQuestion {
+  id: string;
+  header?: string;
+  prompt: string;
+  secret?: boolean;
+  options?: string[];
+}
+
+export interface LivePendingRequest {
+  id: string;
+  kind: "command_approval" | "file_change_approval" | "user_input" | "permissions_approval" | "unsupported";
+  title: string;
+  body?: string;
+  command?: string;
+  cwd?: string;
+  grant_root?: string;
+  questions?: LivePendingQuestion[];
+}
+
+export interface LiveAssistantDeltaEvent {
+  delta: string;
+}
+
+export interface LiveToolCallEvent {
+  item_id: string;
+  turn_id?: string;
+  status?: string;
+  tool_call: {
+    tool_name: string;
+    category?: string;
+    tool_use_id?: string;
+    input_json?: string;
+    result_content?: string;
+  };
+}
+
+export interface LiveTurnCompletedEvent {
+  turn_id?: string;
+}
+
+export interface LiveBlockedEvent {
+  reason: string;
+}
+
+export interface LiveRecreatedEvent {
+  count: number;
+}
+
+export interface LiveProcessExitEvent {
+  error?: string;
+}
+
+export interface LiveRequestResolvedEvent {
+  id: string;
+}
+
+export interface WatchLiveHandlers {
+  onStateChanged?: (state: LiveState) => void;
+  onRawOutput?: (chunk: string) => void;
+  onAssistantDelta?: (ev: LiveAssistantDeltaEvent) => void;
+  onToolCall?: (ev: LiveToolCallEvent) => void;
+  onTurnCompleted?: (ev: LiveTurnCompletedEvent) => void;
+  onBlocked?: (ev: LiveBlockedEvent) => void;
+  onPendingRequest?: (ev: LivePendingRequest) => void;
+  onPendingRequestResolved?: (ev: LiveRequestResolvedEvent) => void;
+  onControllerRecreated?: (ev: LiveRecreatedEvent) => void;
+  onProcessExit?: (ev: LiveProcessExitEvent) => void;
+}
+
+export function getLiveState(sessionId: string): Promise<LiveState> {
+  return fetchJSON(`/sessions/${sessionId}/live`);
+}
+
+export function connectLiveSession(sessionId: string): Promise<LiveState> {
+  return fetchJSON(`/sessions/${sessionId}/live/connect`, { method: "POST" });
+}
+
+export function sendLiveMessage(
+  sessionId: string,
+  content: string,
+  images?: File[],
+): Promise<LiveState> {
+  if (images && images.length > 0) {
+    const form = new FormData();
+    form.append("content", content);
+    for (const img of images) {
+      form.append("images", img);
+    }
+    return fetchJSON(`/sessions/${sessionId}/live/send`, {
+      method: "POST",
+      body: form,
+    });
+  }
+  return fetchJSON(`/sessions/${sessionId}/live/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export function stopLiveTurn(sessionId: string): Promise<LiveState> {
+  return fetchJSON(`/sessions/${sessionId}/live/stop`, { method: "POST" });
+}
+
+export function approveLiveRequest(
+  sessionId: string,
+  requestId: string,
+  decision: "accept" | "acceptForSession" | "decline" | "cancel",
+): Promise<LiveState> {
+  return fetchJSON(`/sessions/${sessionId}/live/requests/${requestId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
+}
+
+export function replyLiveRequest(
+  sessionId: string,
+  requestId: string,
+  answers: Record<string, string[]>,
+): Promise<LiveState> {
+  return fetchJSON(`/sessions/${sessionId}/live/requests/${requestId}/reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answers }),
+  });
+}
+
+/**
+ * Open a live event stream for a session. Returns the EventSource so the
+ * caller can close it when done.
+ */
+export function watchLiveSession(
+  sessionId: string,
+  handlers: WatchLiveHandlers = {},
+): EventSource {
+  const url = `${getBase()}/sessions/${sessionId}/live/events`;
+  const es = new EventSource(url);
+
+  const on = <T>(event: string, fn?: (ev: T) => void) => {
+    if (!fn) return;
+    es.addEventListener(event, (e: MessageEvent) => {
+      try {
+        fn(JSON.parse(e.data) as T);
+      } catch {
+        // ignore parse errors
+      }
+    });
+  };
+
+  on<LiveState>("state_changed", handlers.onStateChanged);
+  on<string>("raw_output", handlers.onRawOutput);
+  on<LiveAssistantDeltaEvent>("assistant_delta", handlers.onAssistantDelta);
+  on<LiveToolCallEvent>("tool_call", handlers.onToolCall);
+  on<LiveTurnCompletedEvent>("turn_completed", handlers.onTurnCompleted);
+  on<LiveBlockedEvent>("blocked", handlers.onBlocked);
+  on<LivePendingRequest>("pending_request", handlers.onPendingRequest);
+  on<LiveRequestResolvedEvent>("pending_request_resolved", handlers.onPendingRequestResolved);
+  on<LiveRecreatedEvent>("controller_recreated", handlers.onControllerRecreated);
+  on<LiveProcessExitEvent>("process_exit", handlers.onProcessExit);
+
+  return es;
 }

@@ -17,6 +17,7 @@ class SettingsStore {
   port: number = $state(0);
   authToken: string = $state("");
   requireAuth: boolean = $state(false);
+  liveChatEnabled: boolean = $state(false);
   loading: boolean = $state(false);
   saving: boolean = $state(false);
   error: string | null = $state(null);
@@ -37,6 +38,7 @@ class SettingsStore {
       this.port = data.port;
       this.authToken = data.auth_token ?? "";
       this.requireAuth = data.require_auth ?? false;
+      this.liveChatEnabled = data.live_chat_enabled ?? false;
       // When the server returns an auth token (localhost only), persist
       // it so the client stays authenticated after remote access is
       // toggled on (which starts requiring auth for all requests).
@@ -67,6 +69,7 @@ class SettingsStore {
       this.port = data.port;
       this.authToken = data.auth_token ?? "";
       this.requireAuth = data.require_auth ?? false;
+      this.liveChatEnabled = data.live_chat_enabled ?? false;
       if (data.auth_token && !isRemoteConnection()) {
         setAuthToken(data.auth_token);
       }
