@@ -441,6 +441,9 @@
           onBack={() => sessions.deselectSession()}
         />
         <MessageList bind:this={messageListRef} />
+        {#if liveSession.state?.enabled && liveSession.state?.available}
+          <LiveChatPanel sessionId={sessions.activeSessionId} />
+        {/if}
       {:else}
         <AnalyticsPage />
       {/if}
@@ -449,9 +452,6 @@
     {#snippet vitals()}
       {#if sessions.activeSessionId}
         <SessionVitals sessionId={sessions.activeSessionId} />
-        {#if liveSession.state?.enabled && liveSession.state?.available}
-          <LiveChatPanel sessionId={sessions.activeSessionId} />
-        {/if}
       {/if}
     {/snippet}
   </ThreeColumnLayout>
