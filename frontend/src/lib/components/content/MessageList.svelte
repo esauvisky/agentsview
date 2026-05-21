@@ -386,6 +386,15 @@
     untrack(() => liveSession.reconcileWithMessages(msgs));
   });
 
+  // Catch-up reload: when provisional turns drop to zero and a reload was
+  // deferred, trigger it now so persisted messages appear.
+  $effect(() => {
+    if (provisionalTurns.length === 0 && liveSession.deferredReload) {
+      liveSession.deferredReload = false;
+      messages.reload();
+    }
+  });
+
   // Auto-scroll when provisional content changes (new text/tool calls)
   $effect(() => {
     const totalContent = provisionalTurns.reduce(

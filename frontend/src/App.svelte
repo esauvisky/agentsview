@@ -93,7 +93,13 @@
         sync.watchSession(
           id,
           () => {
-            messages.reload();
+            // Defer message reloads while provisional turns are active
+            // to avoid duplication with live-streamed content.
+            if (liveSession.provisionalTurns.length > 0) {
+              liveSession.deferredReload = true;
+            } else {
+              messages.reload();
+            }
             sessions.refreshActiveSession();
             sessions.loadChildSessions(id);
             if (ui.vitalsOpen) {

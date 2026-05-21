@@ -57,6 +57,13 @@ class LiveSessionStore {
   provisionalTurns: ProvisionalTurn[] = $state([]);
 
   /**
+   * Set by the SSE callback when a message reload is suppressed because
+   * provisional turns are active. The MessageList effect triggers the
+   * catch-up reload when provisional turns go to zero.
+   */
+  deferredReload: boolean = $state(false);
+
+  /**
    * Prompt history for the current session, persisted to localStorage.
    * Most recent entry is at the end. Max 50 entries per session.
    */
@@ -287,6 +294,7 @@ class LiveSessionStore {
     this.actingRequestId = null;
     this.pendingRequests = [];
     this.provisionalTurns = [];
+    this.deferredReload = false;
     this.promptHistory = [];
     this.error = null;
     this.lastExitError = null;
