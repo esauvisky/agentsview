@@ -350,14 +350,29 @@
           {#each req.questions ?? [] as q}
             {@const key = q.id ?? q.prompt ?? ""}
             <div class="pending-question">
+              {#if q.header}
+                <div class="pending-q-header">{q.header}</div>
+              {/if}
               {#if q.prompt}
                 <label class="pending-q-label">{q.prompt}</label>
               {/if}
-              <input
-                class="pending-q-input"
-                type="text"
-                bind:value={replyAnswers[key]}
-              />
+              {#if q.options && q.options.length > 0}
+                <select
+                  class="pending-q-input"
+                  bind:value={replyAnswers[key]}
+                >
+                  <option value="">Select...</option>
+                  {#each q.options as opt}
+                    <option value={opt}>{opt}</option>
+                  {/each}
+                </select>
+              {:else}
+                <input
+                  class="pending-q-input"
+                  type={q.secret ? "password" : "text"}
+                  bind:value={replyAnswers[key]}
+                />
+              {/if}
             </div>
           {/each}
           <div class="pending-actions">
@@ -676,6 +691,12 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+  }
+
+  .pending-q-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-primary);
   }
 
   .pending-q-label {

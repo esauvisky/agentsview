@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os/exec"
 	"strings"
 	"sync"
@@ -412,6 +413,9 @@ func (s *CodexAppServer) handleNotification(method string, paramsRaw json.RawMes
 		for _, t := range targets {
 			t.emit(ev)
 		}
+
+	default:
+		log.Printf("codex: unrecognized notification %q for thread %s", method, threadID)
 	}
 }
 
@@ -717,7 +721,11 @@ func toolIdentity(itemType string, item map[string]any) (name, category string) 
 func toolInputJSON(itemType string, item map[string]any) string {
 	switch itemType {
 	case "commandExecution":
-		return marshalMap(map[string]any{"command": item["command"], "cwd": item["cwd"]})
+		m := map[string]any{"command": item["command"], "cwd": item["cwd"]}
+		if ec, ok := item["exitCode"]; ok {
+			m["exitCode"] = ec
+		}
+		return marshalMap(m)
 	case "fileChange":
 		return marshalMapKeys(item, "filePath", "path", "grantRoot", "changes", "reason")
 	default:

@@ -46,7 +46,10 @@
     try {
       const parsed = JSON.parse(tc.input_json);
       if (tc.tool_name === "exec_command" && parsed.command) {
-        return `$ ${parsed.command}${parsed.cwd ? `\n(cwd: ${parsed.cwd})` : ""}`;
+        let s = `$ ${parsed.command}`;
+        if (parsed.cwd) s += `\n(cwd: ${parsed.cwd})`;
+        if (parsed.exitCode != null) s += `\n(exit code: ${parsed.exitCode})`;
+        return s;
       }
       if (tc.tool_name === "apply_patch") {
         const parts: string[] = [];
