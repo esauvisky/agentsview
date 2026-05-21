@@ -96,11 +96,13 @@ func (s *Server) handleSendLiveMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state, err := s.liveManager.SendInput(r.Context(), r.PathValue("id"), input)
-	// Clean up uploaded image temp files after the send is accepted.
+	// Clean up uploaded image temp files after a delay: Codex reads them
+	// asynchronously during turn processing, after the turn/start RPC responds.
 	for _, path := range input.LocalImagePaths {
 		uploadDir := filepath.Join(s.cfg.DataDir, "live-images")
 		if strings.HasPrefix(filepath.Clean(path), filepath.Clean(uploadDir)) {
-			_ = os.Remove(path)
+			p := path
+			time.AfterFunc(60*time.Second, func() { _ = os.Remove(p) })
 		}
 	}
 	if err != nil {

@@ -22,6 +22,7 @@
   import { inSessionSearch } from "../../stores/inSessionSearch.svelte.js";
   import { sessionActivity } from "../../stores/sessionActivity.svelte.js";
   import SessionFindBar from "./SessionFindBar.svelte";
+  import { untrack } from "svelte";
   import { liveSession } from "../../stores/liveSession.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { displayToolName } from "../../utils/toolDisplay.js";
@@ -339,10 +340,14 @@
     return liveSession.provisionalTurns;
   });
 
-  // Reconcile provisional turns whenever the persisted transcript changes
+  // Reconcile provisional turns whenever the persisted transcript changes.
+  // untrack() prevents reconcileWithMessages from registering provisionalTurns
+  // as a dependency of this effect: it reads provisionalTurns internally, and
+  // without untrack() writing to provisionalTurns would re-trigger this effect,
+  // causing an infinite update cycle (effect_update_depth_exceeded).
   $effect(() => {
-    void messages.messages.length;
-    liveSession.reconcileWithMessages(messages.messages);
+    const msgs = messages.messages;
+    untrack(() => liveSession.reconcileWithMessages(msgs));
   });
 
   // Auto-scroll to bottom when provisional content changes (new text/tool calls)
