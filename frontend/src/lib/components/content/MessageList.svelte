@@ -364,6 +364,20 @@
     }
   });
 
+  // Scroll to bottom when live session connects
+  let prevLiveState: string | undefined;
+  $effect(() => {
+    const s = liveSession.state?.state;
+    if (s && s !== "offline" && s !== "dead" && prevLiveState !== s && containerRef) {
+      if (prevLiveState === undefined || prevLiveState === "offline" || prevLiveState === "dead") {
+        requestAnimationFrame(() => {
+          if (containerRef) containerRef.scrollTop = containerRef.scrollHeight;
+        });
+      }
+    }
+    prevLiveState = s;
+  });
+
   // Auto-scroll when provisional content changes (new text/tool calls)
   $effect(() => {
     const totalContent = provisionalTurns.reduce(

@@ -95,8 +95,9 @@
     }
     if (e.key === "ArrowUp" && !e.shiftKey) {
       const ta = e.currentTarget as HTMLTextAreaElement;
-      // Only navigate history when cursor is at position 0 (or empty)
-      if (ta.selectionStart === 0 && ta.selectionEnd === 0) {
+      const atStart = ta.selectionStart === 0 && ta.selectionEnd === 0;
+      const singleLine = !draft.includes("\n");
+      if (atStart || singleLine) {
         e.preventDefault();
         stepHistory("up");
         return;
@@ -173,6 +174,7 @@
     clearDraftFromStorage(sessionId);
 
     await liveSession.sendWithImages(content, images);
+    textareaRef?.focus();
   }
 
   async function handleStop() {
