@@ -137,10 +137,10 @@ func (b *codexSessionBuilder) handleResponseItem(
 	payload gjson.Result, ts time.Time,
 ) {
 	switch payload.Get("type").Str {
-	case "function_call":
+	case "function_call", "custom_tool_call":
 		b.handleFunctionCall(payload, ts)
 		return
-	case "function_call_output":
+	case "function_call_output", "custom_tool_call_output":
 		b.handleFunctionCallOutput(payload, ts)
 		return
 	}
@@ -572,7 +572,7 @@ func formatCodexFunctionCall(
 		return formatCodexBashCall(summary, args, rawArgs)
 	case "write_stdin":
 		return formatCodexWriteStdinCall(summary, args, rawArgs)
-	case "apply_patch":
+	case "apply_patch", "fileChange":
 		return formatCodexApplyPatchCall(summary, args, rawArgs)
 	case "spawn_agent":
 		return formatCodexSpawnAgentCall(summary, args, rawArgs)
@@ -649,6 +649,7 @@ func parseCodexFunctionArgs(
 // "arguments" then "input", normalizing string-encoded JSON
 // to an object string.
 func extractCodexInputJSON(payload gjson.Result) string {
+	name := payload.Get("name").Str
 	for _, key := range []string{"arguments", "input"} {
 		arg := payload.Get(key)
 		if !arg.Exists() {
@@ -666,6 +667,14 @@ func extractCodexInputJSON(payload gjson.Result) string {
 					continue
 				}
 				return s
+			}
+			// Raw non-JSON input (e.g. apply_patch with *** Begin Patch).
+			// Wrap in a JSON object so the frontend can parse it.
+			if name == "apply_patch" || name == "fileChange" {
+				wrapped, err := json.Marshal(map[string]string{"patch": arg.Str})
+				if err == nil {
+					return string(wrapped)
+				}
 			}
 			return arg.Str
 		default:

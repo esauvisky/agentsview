@@ -276,7 +276,7 @@
   );
   let isDiff = $derived.by(() => {
     const text = fallbackContent ?? content ?? "";
-    return text.startsWith("--- a/") || text.startsWith("@@");
+    return text.startsWith("--- a/") || text.startsWith("@@") || text.startsWith("*** Begin Patch");
   });
 
   let diffLines = $derived.by(() => {
@@ -333,7 +333,7 @@
     {:else if fallbackContent && isDiff}
       <div class="diff-view">
         {#each diffLines as line}
-          <div class="diff-line {line.startsWith('@@') ? 'diff-hunk' : line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-del' : 'diff-ctx'}">{line}</div>
+          <div class="diff-line {line.startsWith('@@') || line.startsWith('***') ? 'diff-hunk' : line.startsWith('+') ? 'diff-add' : line.startsWith('-') ? 'diff-del' : 'diff-ctx'}">{line}</div>
         {/each}
       </div>
     {:else if fallbackContent}

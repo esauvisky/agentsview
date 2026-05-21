@@ -141,8 +141,8 @@ export function generateFallbackContent(
       params.old_string ?? params.old_str ?? params.oldString ?? params.oldStr;
     const newStr =
       params.new_string ?? params.new_str ?? params.newString ?? params.newStr;
-    // Kiro IDE: pre-computed unified diff from Go parser
-    const diffText = params.diff;
+    // Pre-computed unified diff: Kiro IDE (diff), Codex persistent (patch)
+    const diffText = params.diff ?? params.patch;
     if (!lines.length && typeof diffText === "string" && diffText) {
       const diffLines = diffText.split("\n");
       if (diffLines.length > MAX_DIFF_LINES) {
@@ -150,6 +150,29 @@ export function generateFallbackContent(
           + `\n... (${diffLines.length} lines total)`;
       }
       return diffText;
+    }
+    // Codex live: changes is an array of {diff, kind, path} objects
+    if (!lines.length && Array.isArray(params.changes)) {
+      for (const change of params.changes as Record<string, unknown>[]) {
+        const path = change.path;
+        const diff = change.diff;
+        if (typeof path === "string" && path) {
+          lines.push(`--- a/${path}`);
+          lines.push(`+++ b/${path}`);
+        }
+        if (typeof diff === "string" && diff) {
+          const dl = diff.split("\n");
+          // If the diff doesn't start with @@ hunk, generate one
+          if (dl.length > 0 && !dl[0]!.startsWith("@@")) {
+            lines.push(`@@ -1 +1 @@`);
+          }
+          lines.push(...dl);
+        }
+      }
+      if (lines.length > MAX_DIFF_LINES) {
+        lines.length = MAX_DIFF_LINES;
+        lines.push("... (truncated)");
+      }
     }
     if (oldStr != null || newStr != null) {
       const oldText = String(oldStr ?? "");

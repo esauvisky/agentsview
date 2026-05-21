@@ -29,7 +29,7 @@ func NormalizeToolCategory(rawName string) string {
 	case "shell_command", "exec_command",
 		"write_stdin", "shell":
 		return "Bash"
-	case "apply_patch":
+	case "apply_patch", "fileChange":
 		return "Edit"
 	case "spawn_agent":
 		return "Task"
