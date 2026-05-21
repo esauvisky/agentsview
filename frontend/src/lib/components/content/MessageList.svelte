@@ -386,7 +386,7 @@
     untrack(() => liveSession.reconcileWithMessages(msgs));
   });
 
-  // Auto-scroll to bottom when provisional content changes (new text/tool calls)
+  // Auto-scroll when provisional content changes (new text/tool calls)
   $effect(() => {
     const totalContent = provisionalTurns.reduce(
       (acc, t) => acc + t.assistantText.length + t.toolCalls.length,
@@ -395,11 +395,21 @@
     void totalContent;
     if (!containerRef || provisionalTurns.length === 0) return;
     const el = containerRef;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distFromBottom < 200) {
-      requestAnimationFrame(() => {
-        if (containerRef) containerRef.scrollTop = containerRef.scrollHeight;
-      });
+    if (ui.sortNewestFirst) {
+      // Provisionals at top in newest-first — scroll to top if near top
+      if (el.scrollTop < 200) {
+        requestAnimationFrame(() => {
+          if (containerRef) containerRef.scrollTop = 0;
+        });
+      }
+    } else {
+      // Provisionals at bottom in oldest-first — scroll to bottom if near bottom
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distFromBottom < 200) {
+        requestAnimationFrame(() => {
+          if (containerRef) containerRef.scrollTop = containerRef.scrollHeight;
+        });
+      }
     }
   });
 </script>
@@ -427,6 +437,9 @@
     data-loaded={!messages.loading}
     onscroll={handleScroll}
   >
+    {#if ui.sortNewestFirst && provisionalTurns.length > 0}
+      {@render provisionalSection()}
+    {/if}
     <div
       style="height: {virtualizer.instance?.getTotalSize() ?? 0}px; width: 100%; position: relative;"
     >
@@ -474,89 +487,99 @@
         {/if}
       {/each}
     </div>
-  </div>
 
-  {#if provisionalTurns.length > 0}
-    <div class="provisional-section">
-      {#each provisionalTurns as turn (turn.id)}
+    {#if !ui.sortNewestFirst && provisionalTurns.length > 0}
+      {@render provisionalSection()}
+    {/if}
+  </div>
+{/if}
+
+{#snippet provisionalSection()}
+  <div class="provisional-section">
+    {#each provisionalTurns as turn (turn.id)}
+      <div class="provisional-row">
+        <div class="prov-message prov-is-user" style:border-left-color="var(--accent-blue)" style:background="var(--user-bg)">
+          <div class="prov-message-header">
+            <span class="prov-role-icon" style:background="var(--accent-blue)">U</span>
+            <span class="prov-role-label" style:color="var(--accent-blue)">User</span>
+            {#if turn.imageCount > 0}
+              <span class="provisional-meta">{turn.imageCount} image{turn.imageCount > 1 ? "s" : ""}</span>
+            {/if}
+            <div class="prov-header-meta">
+              <span class="live-badge">live</span>
+            </div>
+          </div>
+          {#if turn.userContent}
+            <div class="prov-message-body">
+              <div class="prov-text-content prov-markdown">{@html renderMarkdown(turn.userContent)}</div>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      {#each turn.toolCalls as tc (tc.itemId)}
+        {@const hasDetail = !!(tc.toolCall.input_json || tc.toolCall.result_content)}
+        {@const isExpanded = expandedToolCalls.has(tc.itemId)}
         <div class="provisional-row">
-          <div class="message is-user provisional" style="border-left-color: var(--accent-blue); background: var(--user-bg);">
-            <div class="message-header">
-              <span class="role-icon" style="background: var(--accent-blue);">U</span>
-              <span class="role-label" style="color: var(--accent-blue);">User</span>
-              {#if turn.imageCount > 0}
-                <span class="provisional-meta">{turn.imageCount} image{turn.imageCount > 1 ? "s" : ""}</span>
+          <div
+            class="provisional-tool"
+            class:provisional-tool-expandable={hasDetail}
+            onclick={() => hasDetail && toggleToolCallDetail(tc.itemId)}
+          >
+            {#if tc.status === "inProgress"}
+              <span class="provisional-spinner"></span>
+            {:else}
+              <span class="provisional-done">&#x2713;</span>
+            {/if}
+            <span class="provisional-tool-name">{displayToolName(tc.toolCall)}</span>
+            {#if tc.status === "inProgress"}
+              <span class="provisional-tool-dur">{formatDuration(Math.max(0, liveTick.now - tc.startedAt))}</span>
+            {/if}
+            {#if hasDetail}
+              <span class="provisional-tool-chevron" class:expanded={isExpanded}>&#x25B8;</span>
+            {/if}
+          </div>
+          {#if isExpanded}
+            <div class="provisional-tool-detail">
+              {#if tc.toolCall.input_json}
+                {@const input = formatToolInput(tc.toolCall)}
+                {#if input}
+                  <pre class="tool-detail-block">{input}</pre>
+                {/if}
+              {/if}
+              {#if tc.toolCall.result_content}
+                {@const result = truncate(tc.toolCall.result_content, 500)}
+                <pre class="tool-detail-block tool-detail-result">{result.text}{#if result.truncated}...{/if}</pre>
               {/if}
             </div>
-            {#if turn.userContent}
-              <div class="message-body">
-                <div class="text-content markdown">{@html renderMarkdown(turn.userContent)}</div>
+          {/if}
+        </div>
+      {/each}
+
+      {#if turn.assistantText || (turn.isStreaming && turn.toolCalls.length === 0)}
+        <div class="provisional-row">
+          <div class="prov-message" style:border-left-color="var(--accent-purple)" style:background="var(--assistant-bg)">
+            <div class="prov-message-header">
+              <span class="prov-role-icon" style:background="var(--accent-purple)">A</span>
+              <span class="prov-role-label" style:color="var(--accent-purple)">Assistant</span>
+              <div class="prov-header-meta">
+                <span class="live-badge">live</span>
               </div>
-            {/if}
+            </div>
+            <div class="prov-message-body">
+              {#if turn.assistantText}
+                <div class="prov-text-content prov-markdown">{@html renderMarkdown(turn.assistantText)}</div>
+              {/if}
+              {#if turn.isStreaming}
+                <span class="stream-cursor"></span>
+              {/if}
+            </div>
           </div>
         </div>
-
-        {#each turn.toolCalls as tc (tc.itemId)}
-          {@const hasDetail = !!(tc.toolCall.input_json || tc.toolCall.result_content)}
-          {@const isExpanded = expandedToolCalls.has(tc.itemId)}
-          <div class="provisional-row">
-            <div
-              class="provisional-tool"
-              class:provisional-tool-expandable={hasDetail}
-              onclick={() => hasDetail && toggleToolCallDetail(tc.itemId)}
-            >
-              {#if tc.status === "inProgress"}
-                <span class="provisional-spinner"></span>
-              {:else}
-                <span class="provisional-done">&#x2713;</span>
-              {/if}
-              <span class="provisional-tool-name">{displayToolName(tc.toolCall)}</span>
-              {#if tc.status === "inProgress"}
-                <span class="provisional-tool-dur">{formatDuration(Math.max(0, liveTick.now - tc.startedAt))}</span>
-              {/if}
-              {#if hasDetail}
-                <span class="provisional-tool-chevron" class:expanded={isExpanded}>&#x25B8;</span>
-              {/if}
-            </div>
-            {#if isExpanded}
-              <div class="provisional-tool-detail">
-                {#if tc.toolCall.input_json}
-                  {@const input = formatToolInput(tc.toolCall)}
-                  {#if input}
-                    <pre class="tool-detail-block">{input}</pre>
-                  {/if}
-                {/if}
-                {#if tc.toolCall.result_content}
-                  {@const result = truncate(tc.toolCall.result_content, 500)}
-                  <pre class="tool-detail-block tool-detail-result">{result.text}{#if result.truncated}...{/if}</pre>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        {/each}
-
-        {#if turn.assistantText || (turn.isStreaming && turn.toolCalls.length === 0)}
-          <div class="provisional-row">
-            <div class="message provisional" style="border-left-color: var(--accent-purple); background: var(--assistant-bg);">
-              <div class="message-header">
-                <span class="role-icon" style="background: var(--accent-purple);">A</span>
-                <span class="role-label" style="color: var(--accent-purple);">Assistant</span>
-              </div>
-              <div class="message-body">
-                {#if turn.assistantText}
-                  <div class="text-content markdown">{@html renderMarkdown(turn.assistantText)}</div>
-                {/if}
-                {#if turn.isStreaming}
-                  <span class="stream-cursor"></span>
-                {/if}
-              </div>
-            </div>
-          </div>
-        {/if}
-      {/each}
-    </div>
-  {/if}
-{/if}
+      {/if}
+    {/each}
+  </div>
+{/snippet}
 
 <style>
   .message-list-scroll {
@@ -606,8 +629,116 @@
     padding: 5px 12px;
   }
 
-  .message.provisional {
+  /* Provisional message styles (matching MessageContent) */
+  .prov-message {
+    border-left: 4px solid;
+    padding: 14px 20px;
+    border-radius: 0 var(--radius-md, 6px) var(--radius-md, 6px) 0;
     opacity: 0.92;
+  }
+
+  .prov-message-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .prov-role-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .prov-role-label {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+
+  .prov-header-meta {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .prov-message-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .prov-text-content {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-primary);
+    word-wrap: break-word;
+  }
+
+  /* Markdown prose for provisional messages */
+  .prov-markdown :global(p) { margin: 0.5em 0; }
+  .prov-markdown :global(p:first-child) { margin-top: 0; }
+  .prov-markdown :global(p:last-child) { margin-bottom: 0; }
+  .prov-markdown :global(h1),
+  .prov-markdown :global(h2),
+  .prov-markdown :global(h3),
+  .prov-markdown :global(h4),
+  .prov-markdown :global(h5),
+  .prov-markdown :global(h6) { margin: 0.8em 0 0.4em; line-height: 1.3; font-weight: 600; }
+  .prov-markdown :global(h1) { font-size: 1.35em; }
+  .prov-markdown :global(h2) { font-size: 1.2em; }
+  .prov-markdown :global(h3) { font-size: 1.1em; }
+  .prov-markdown :global(a) { color: var(--accent-blue); text-decoration: none; }
+  .prov-markdown :global(a:hover) { text-decoration: underline; }
+  .prov-markdown :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: 4px;
+    padding: 0.15em 0.4em;
+  }
+  .prov-markdown :global(pre) {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    overflow-x: auto;
+    margin: 0.5em 0;
+  }
+  .prov-markdown :global(pre code) { background: none; border: none; padding: 0; font-size: 13px; color: inherit; }
+  .prov-markdown :global(blockquote) { border-left: 3px solid var(--border-default); margin: 0.5em 0; padding: 0.3em 1em; color: var(--text-secondary); }
+  .prov-markdown :global(ul),
+  .prov-markdown :global(ol) { padding-left: 1.6em; margin: 0.5em 0; }
+  .prov-markdown :global(li) { margin: 0.2em 0; line-height: 1.65; }
+  .prov-markdown :global(hr) { border: none; border-top: 1px solid var(--border-muted); margin: 0.8em 0; }
+
+  /* Live badge */
+  @keyframes live-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+  }
+
+  .live-badge {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent-green, #3fb950);
+    background: color-mix(in srgb, var(--accent-green, #3fb950) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent-green, #3fb950) 20%, transparent);
+    padding: 1px 6px;
+    border-radius: 3px;
+    animation: live-pulse 2s ease-in-out infinite;
   }
 
   .provisional-tool {
