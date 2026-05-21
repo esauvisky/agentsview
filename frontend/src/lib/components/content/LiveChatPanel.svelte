@@ -1,6 +1,7 @@
 <script lang="ts">
   import { liveSession } from "../../stores/liveSession.svelte.js";
   import type { LivePendingRequest } from "../../api/client.js";
+  import { connectLiveSession } from "../../api/client.js";
   import { formatDuration } from "../../utils/duration.js";
   import { liveTick } from "../../stores/liveTick.svelte.js";
 
@@ -181,12 +182,39 @@
   // Thinking: streaming with no text and no tool calls yet
   let awaitingResponse = $derived(liveSession.awaitingResponse);
 
-  // Disabled when: no session match, sending, or session not live
+  let isOffline = $derived(
+    !liveSession.state?.state || liveSession.state.state === "offline" || liveSession.state.state === "dead",
+  );
+
+  let connecting = $state(false);
+
+  async function handleConnect() {
+    if (connecting || !sessionId) return;
+    connecting = true;
+    try {
+      const state = await connectLiveSession(sessionId);
+      liveSession.state = state;
+      // Start watching the SSE stream after connect
+      void liveSession.watch(sessionId);
+    } catch {
+      // Errors will show in the state
+    } finally {
+      connecting = false;
+    }
+  }
+
+  // Allow send when live/starting, or when offline (first message auto-starts the process)
   let canSend = $derived(
     sessionId === liveSession.sessionId &&
     !sending &&
-    (liveSession.state?.state === "live" || liveSession.state?.state === "starting"),
+    liveSession.state?.state !== "blocked",
   );
+
+  let placeholderText = $derived.by(() => {
+    if (awaitingResponse) return "Thinking...";
+    if (isOffline) return "Send a message to connect...";
+    return "Message...";
+  });
 </script>
 
 <div class="live-panel">
@@ -294,12 +322,32 @@
     </div>
   {/if}
 
+  <!-- Connect button when offline -->
+  {#if isOffline && !connecting}
+    <button
+      class="connect-btn"
+      onclick={handleConnect}
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M11.534 7h3.932a.25.25 0 01.192.41l-1.966 2.36a.25.25 0 01-.384 0l-1.966-2.36a.25.25 0 01.192-.41zm-11 2h3.932a.25.25 0 00.192-.41L2.692 6.23a.25.25 0 00-.384 0L.342 8.59A.25.25 0 00.534 9z"/>
+        <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 11-.771-.636A6.002 6.002 0 0113.917 7H12.9A5.002 5.002 0 008 3zM3.1 9a5.002 5.002 0 008.757 2.182.5.5 0 11.771.636A6.002 6.002 0 012.083 9H3.1z"/>
+      </svg>
+      Connect Session
+    </button>
+  {/if}
+  {#if connecting}
+    <div class="connect-status">
+      <span class="provisional-spinner"></span>
+      Connecting...
+    </div>
+  {/if}
+
   <!-- Composer -->
   <div class="composer">
     <textarea
       bind:this={textareaRef}
       class="composer-input"
-      placeholder={awaitingResponse ? "Thinking..." : "Message..."}
+      placeholder={placeholderText}
       rows={1}
       bind:value={draft}
       disabled={!canSend}
@@ -720,5 +768,52 @@
 
   .action-btn-send:disabled {
     opacity: 0.3;
+  }
+
+  /* ── Connect button ── */
+  .connect-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    height: 32px;
+    border: 1px solid var(--accent-blue);
+    border-radius: var(--radius-md, 6px);
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    color: var(--accent-blue);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+
+  .connect-btn:hover {
+    background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  }
+
+  .connect-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 32px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  @keyframes provisional-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .provisional-spinner {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-muted);
+    border-top-color: var(--accent-blue);
+    border-radius: 50%;
+    animation: provisional-spin 0.7s linear infinite;
+    flex-shrink: 0;
   }
 </style>

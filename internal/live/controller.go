@@ -12,9 +12,10 @@ type Config struct {
 }
 
 type sendReq struct {
-	ctx   context.Context
-	input TurnInput
-	done  chan error
+	ctx         context.Context
+	input       TurnInput
+	done        chan error
+	connectOnly bool
 }
 
 // Controller manages the lifecycle of one live process and fans events
@@ -48,6 +49,23 @@ func NewController(cfg Config) *Controller {
 	}
 	go c.run()
 	return c
+}
+
+// Connect ensures the underlying process is started without sending a
+// message. Serialized through the same queue as Send to avoid races.
+func (c *Controller) Connect(ctx context.Context) error {
+	req := sendReq{ctx: ctx, connectOnly: true, done: make(chan error, 1)}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case c.queue <- req:
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-req.done:
+		return err
+	}
 }
 
 // Send queues one user message and blocks until the controller has
@@ -140,7 +158,11 @@ func (c *Controller) Subscribe() (<-chan Event, func()) {
 
 func (c *Controller) run() {
 	for req := range c.queue {
-		req.done <- c.handleSend(req.ctx, req.input)
+		if req.connectOnly {
+			req.done <- c.ensureStarted(req.ctx)
+		} else {
+			req.done <- c.handleSend(req.ctx, req.input)
+		}
 	}
 }
 

@@ -6,6 +6,8 @@
   import SessionFilterControl from "../filters/SessionFilterControl.svelte";
   import { formatNumber } from "../../utils/format.js";
   import { agentColor } from "../../utils/agents.js";
+  import { connectLiveSession } from "../../api/client.js";
+  import { liveSession } from "../../stores/liveSession.svelte.js";
   import {
     type GroupMode,
     ITEM_HEIGHT,
@@ -282,6 +284,26 @@
       scrollRaf = null;
     }
   });
+
+  /** Connect a live session for the most recent session in this project group. */
+  async function connectGroupSession(label: string, e: Event) {
+    e.stopPropagation();
+    const section = groupSections.find((s) => s.label === label);
+    if (!section) return;
+    const allSessions = section.groups.flatMap((g) => g.sessions);
+    if (allSessions.length === 0) return;
+    const recent = allSessions[0]!;
+    // Select the session first so the user sees it
+    sessions.navigateToSession(recent.id);
+    // Connect the live session (starts the codex process)
+    try {
+      const state = await connectLiveSession(recent.id);
+      liveSession.state = state;
+      void liveSession.watch(recent.id);
+    } catch {
+      // Will show error in the live panel
+    }
+  }
 </script>
 
 <div class="session-list-header">
@@ -348,7 +370,9 @@
         style="position: absolute; top: 0; left: 0; width: 100%; height: {item.height}px; transform: translateY({item.top}px);"
       >
         {#if item.type === "header"}
-          <button
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
             class="group-header"
             onclick={() => toggleGroup(item.label)}
           >
@@ -380,7 +404,19 @@
             {/if}
             <span class="group-name">{item.label}</span>
             <span class="group-count">{item.count}</span>
-          </button>
+            {#if groupMode === "project"}
+              <button
+                class="new-session-btn"
+                title="Connect live session"
+                onclick={(e) => connectGroupSession(item.label, e)}
+              >
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.534 7h3.932a.25.25 0 01.192.41l-1.966 2.36a.25.25 0 01-.384 0l-1.966-2.36a.25.25 0 01.192-.41zm-11 2h3.932a.25.25 0 00.192-.41L2.692 6.23a.25.25 0 00-.384 0L.342 8.59A.25.25 0 00.534 9z"/>
+                  <path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 11-.771-.636A6.002 6.002 0 0113.917 7H12.9A5.002 5.002 0 008 3zM3.1 9a5.002 5.002 0 008.757 2.182.5.5 0 11.771.636A6.002 6.002 0 012.083 9H3.1z"/>
+                </svg>
+              </button>
+            {/if}
+          </div>
         {:else if item.type === "subagent-group" && item.group}
           {@const subKey = `subagent:${item.group.key}`}
           {@const subExpanded = expandedGroups.has(subKey)}
@@ -643,6 +679,31 @@
     padding: 0 5px;
     border-radius: 8px;
     line-height: 16px;
+  }
+
+  .new-session-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s, background 0.12s, color 0.12s;
+  }
+
+  .group-header:hover .new-session-btn {
+    opacity: 1;
+  }
+
+  .new-session-btn:hover {
+    background: var(--bg-surface);
+    color: var(--accent-blue);
   }
 
   /* Sub-group headers (Subagents, Team) at depth 1 */

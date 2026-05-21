@@ -70,7 +70,7 @@ func (s *Server) handleGetLiveState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnectLive(w http.ResponseWriter, r *http.Request) {
-	_, state, err := s.liveManager.Ensure(r.Context(), r.PathValue("id"))
+	ctrl, _, err := s.liveManager.Ensure(r.Context(), r.PathValue("id"))
 	if err != nil {
 		if s.handleLiveError(w, err) {
 			return
@@ -78,7 +78,10 @@ func (s *Server) handleConnectLive(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, state)
+	// Start the underlying process so the session transitions from
+	// offline to live without requiring a message first.
+	_ = ctrl.Connect(r.Context())
+	writeJSON(w, http.StatusOK, ctrl.Snapshot())
 }
 
 func (s *Server) handleSendLiveMessage(w http.ResponseWriter, r *http.Request) {
