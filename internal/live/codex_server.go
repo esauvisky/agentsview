@@ -673,9 +673,11 @@ func toolCallEventFromNotification(method string, paramsRaw json.RawMessage) (To
 	if itemType == "" || itemID == "" {
 		return ToolCallData{}, false
 	}
-	// userMessage and agentMessage are not tool calls — they represent the
-	// user/assistant messages themselves and are handled via assistant_delta.
-	if itemType == "userMessage" || itemType == "agentMessage" {
+	// userMessage, agentMessage, and reasoning are not tool calls — they
+	// represent the user/assistant messages and thinking content, which are
+	// handled via assistant_delta events.
+	switch itemType {
+	case "userMessage", "agentMessage", "reasoning":
 		return ToolCallData{}, false
 	}
 

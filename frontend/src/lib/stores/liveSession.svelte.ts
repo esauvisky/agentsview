@@ -17,6 +17,7 @@ export interface ProvisionalToolCall {
   toolCall: ToolCall;
   status: string; // "inProgress" | "completed"
   startedAt: number;
+  completedAt?: number;
 }
 
 export type ProvisionalSegment =
@@ -371,11 +372,13 @@ class LiveSessionStore {
         ? (turn.segments[existingIdx] as { kind: "tool"; tc: ProvisionalToolCall }).tc
         : undefined;
 
+    const status = ev.status ?? "inProgress";
     const updated: ProvisionalToolCall = {
       itemId,
       toolCall: ev.tool_call as ToolCall,
-      status: ev.status ?? "inProgress",
+      status,
       startedAt: existing?.startedAt ?? Date.now(),
+      completedAt: status === "completed" ? Date.now() : existing?.completedAt,
     };
 
     this.provisionalTurns = this.provisionalTurns.map((t) => {

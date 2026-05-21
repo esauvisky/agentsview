@@ -540,7 +540,9 @@
               label={displayToolName(seg.tc.toolCall)}
               durationLabel={seg.tc.status === "inProgress"
                 ? formatDuration(Math.max(0, liveTick.now - seg.tc.startedAt))
-                : undefined}
+                : seg.tc.completedAt
+                  ? formatDuration(Math.max(0, seg.tc.completedAt - seg.tc.startedAt))
+                  : undefined}
               isRunning={seg.tc.status === "inProgress"}
             />
           </div>
