@@ -9,6 +9,7 @@
   import GithubSettings from "./GithubSettings.svelte";
   import RemoteSettings from "./RemoteSettings.svelte";
   import WorktreeMappingSettings from "./WorktreeMappingSettings.svelte";
+  import SettingsSection from "./SettingsSection.svelte";
 
   let authTokenInput: string = $state("");
 
@@ -91,6 +92,26 @@
       <WorktreeMappingSettings />
       <GithubSettings />
       <RemoteSettings />
+
+      <SettingsSection title="Live Chat" description="Chat with a running Codex agent in real time.">
+        <div class="setting-row">
+          <span class="setting-label">Enable live chat</span>
+          <button
+            class="toggle-btn"
+            class:on={settings.liveChatEnabled}
+            disabled={settings.saving}
+            onclick={() => settings.save({ live_chat_enabled: !settings.liveChatEnabled })}
+            role="switch"
+            aria-checked={settings.liveChatEnabled}
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+        <p class="setting-hint">
+          When enabled, a chat composer appears in the sidebar for Codex sessions.
+          Requires the <code>codex</code> CLI on PATH.
+        </p>
+      </SettingsSection>
 
       <div class="settings-actions">
         <button
@@ -262,5 +283,72 @@
 
   .auth-disconnect:hover {
     color: var(--text-secondary);
+  }
+
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .setting-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .setting-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .setting-hint code {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border-muted);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+
+  .toggle-btn {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    border: none;
+    background: var(--border-default);
+    cursor: pointer;
+    transition: background 0.15s;
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .toggle-btn.on {
+    background: var(--accent-blue);
+  }
+
+  .toggle-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: white;
+    transition: transform 0.15s;
+    pointer-events: none;
+  }
+
+  .toggle-btn.on .toggle-knob {
+    transform: translateX(16px);
   }
 </style>
