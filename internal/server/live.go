@@ -43,7 +43,11 @@ type liveReplyRequest struct {
 
 func newDefaultLiveManager(cfg config.Config, database db.Store) *live.Manager {
 	codexServer := live.NewCodexAppServer()
-	enabled := cfg.LiveChatEnabled && !database.ReadOnly() && live.CodexAppServerSupported()
+	// Enable when codex is on PATH and the DB is writable.
+	// cfg.LiveChatEnabled can explicitly force it on even when codex is
+	// not on PATH (e.g. for testing), but the default auto-detection
+	// requires no config change from the user.
+	enabled := !database.ReadOnly() && (cfg.LiveChatEnabled || live.CodexAppServerSupported())
 	return live.NewManager(
 		enabled,
 		func(ctx context.Context, id string) (*db.Session, error) {
