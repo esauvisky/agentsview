@@ -43,7 +43,8 @@ type liveReplyRequest struct {
 
 func newDefaultLiveManager(cfg config.Config, database db.Store) *live.Manager {
 	codexServer := live.NewCodexAppServer()
-	enabled := cfg.LiveChatEnabled && !database.ReadOnly() && live.CodexAppServerSupported()
+	enabled := cfg.LiveChatEnabled && !database.ReadOnly() &&
+		(live.CodexAppServerSupported() || live.ClaudeSupported())
 	return live.NewManager(
 		enabled,
 		func(ctx context.Context, id string) (*db.Session, error) {
@@ -52,6 +53,9 @@ func newDefaultLiveManager(cfg config.Config, database db.Store) *live.Manager {
 		map[string]live.AdapterFactory{
 			"codex": func(session *db.Session) (live.Adapter, error) {
 				return live.NewCodexAdapter(session, codexServer)
+			},
+			"claude": func(session *db.Session) (live.Adapter, error) {
+				return live.NewClaudeAdapter(session.ID, session.Cwd)
 			},
 		},
 	)
