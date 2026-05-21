@@ -47,7 +47,7 @@ type claudeProcess struct {
 	done   chan struct{}
 }
 
-func startClaudeProcess(ctx context.Context, sessionID, cwd string) (*claudeProcess, error) {
+func startClaudeProcess(_ context.Context, sessionID, cwd string) (*claudeProcess, error) {
 	args := []string{
 		"-p",
 		"--resume", sessionID,
@@ -57,7 +57,9 @@ func startClaudeProcess(ctx context.Context, sessionID, cwd string) (*claudeProc
 		"--replay-user-messages",
 	}
 
-	cmd := exec.CommandContext(ctx, "claude", args...)
+	// Use background context — the process must outlive the HTTP request
+	// that triggered Start. Shutdown is managed via Close().
+	cmd := exec.Command("claude", args...)
 	if cwd != "" {
 		cmd.Dir = cwd
 	}
