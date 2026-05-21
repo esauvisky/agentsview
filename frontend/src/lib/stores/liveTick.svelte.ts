@@ -1,5 +1,5 @@
 import { sessionTiming } from "./sessionTiming.svelte.js";
-import { liveSession } from "./liveSession.svelte.js";
+import { liveSession, turnToolCalls } from "./liveSession.svelte.js";
 
 /** Reactive Date.now() that ticks every second while the loaded
  *  session has `running: true` OR while there are in-progress
@@ -16,7 +16,7 @@ class LiveTickStore {
       $effect(() => {
         const running = sessionTiming.timing?.running ?? false;
         const hasLiveCalls = liveSession.provisionalTurns.some((t) =>
-          t.toolCalls.some((tc) => tc.status !== "completed"),
+          turnToolCalls(t).some((tc) => tc.status !== "completed"),
         );
         const shouldTick = running || hasLiveCalls;
         if (shouldTick) {

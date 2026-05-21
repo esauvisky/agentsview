@@ -19,6 +19,10 @@ export interface ProvisionalToolCall {
   startedAt: number;
 }
 
+export type ProvisionalSegment =
+  | { kind: "text"; content: string }
+  | { kind: "tool"; tc: ProvisionalToolCall };
+
 export interface ProvisionalTurn {
   /** Client-side ID, used to correlate state updates. */
   id: string;
@@ -26,16 +30,29 @@ export interface ProvisionalTurn {
   imageCount: number;
   /** Date.now() at the moment send() was called. */
   sentAt: number;
-  /** Accumulates via assistant_delta events. */
-  assistantText: string;
-  /** In-progress tool calls for this turn. */
-  toolCalls: ProvisionalToolCall[];
+  /** Interleaved text and tool call segments. */
+  segments: ProvisionalSegment[];
   /**
    * True from when the user message is sent until turn_completed arrives.
    * False after the turn is done streaming (but the turn may still be
    * visible until reconciled with the persisted transcript).
    */
   isStreaming: boolean;
+}
+
+/** Helper: total assistant text across all text segments. */
+export function turnAssistantText(turn: ProvisionalTurn): string {
+  return turn.segments
+    .filter((s): s is { kind: "text"; content: string } => s.kind === "text")
+    .map((s) => s.content)
+    .join("");
+}
+
+/** Helper: all tool calls from segments. */
+export function turnToolCalls(turn: ProvisionalTurn): ProvisionalToolCall[] {
+  return turn.segments
+    .filter((s): s is { kind: "tool"; tc: ProvisionalToolCall } => s.kind === "tool")
+    .map((s) => s.tc);
 }
 
 class LiveSessionStore {
@@ -76,7 +93,7 @@ class LiveSessionStore {
   get awaitingResponse(): boolean {
     const last = this.provisionalTurns[this.provisionalTurns.length - 1];
     if (!last || !last.isStreaming) return false;
-    return last.assistantText.length === 0 && last.toolCalls.length === 0;
+    return last.segments.length === 0;
   }
 
   private es: EventSource | null = null;
@@ -309,8 +326,7 @@ class LiveSessionStore {
       userContent: content,
       imageCount,
       sentAt: Date.now(),
-      assistantText: "",
-      toolCalls: [],
+      segments: [],
       isStreaming: true,
     };
     this.provisionalTurns = [...this.provisionalTurns, turn];
@@ -325,9 +341,17 @@ class LiveSessionStore {
     if (!delta) return;
     const last = this.lastStreamingTurn();
     if (!last) return;
-    this.provisionalTurns = this.provisionalTurns.map((t) =>
-      t.id === last.id ? { ...t, assistantText: t.assistantText + delta } : t,
-    );
+    this.provisionalTurns = this.provisionalTurns.map((t) => {
+      if (t.id !== last.id) return t;
+      const segs = [...t.segments];
+      const tail = segs[segs.length - 1];
+      if (tail && tail.kind === "text") {
+        segs[segs.length - 1] = { kind: "text", content: tail.content + delta };
+      } else {
+        segs.push({ kind: "text", content: delta });
+      }
+      return { ...t, segments: segs };
+    });
   }
 
   private upsertToolCall(ev: LiveToolCallEvent) {
@@ -337,7 +361,16 @@ class LiveSessionStore {
     const itemId = ev.item_id ?? ev.tool_call.tool_use_id;
     if (!itemId) return;
 
-    const existing = turn.toolCalls.find((tc) => tc.itemId === itemId);
+    // Check if this tool call already exists in segments (update case)
+    const existingIdx = turn.segments.findIndex(
+      (s) => s.kind === "tool" && s.tc.itemId === itemId,
+    );
+
+    const existing =
+      existingIdx >= 0
+        ? (turn.segments[existingIdx] as { kind: "tool"; tc: ProvisionalToolCall }).tc
+        : undefined;
+
     const updated: ProvisionalToolCall = {
       itemId,
       toolCall: ev.tool_call as ToolCall,
@@ -345,13 +378,18 @@ class LiveSessionStore {
       startedAt: existing?.startedAt ?? Date.now(),
     };
 
-    const nextCalls = turn.toolCalls
-      .filter((tc) => tc.itemId !== itemId)
-      .concat(updated);
-
-    this.provisionalTurns = this.provisionalTurns.map((t) =>
-      t.id === turn.id ? { ...t, toolCalls: nextCalls } : t,
-    );
+    this.provisionalTurns = this.provisionalTurns.map((t) => {
+      if (t.id !== turn.id) return t;
+      const segs = [...t.segments];
+      if (existingIdx >= 0) {
+        // Update existing tool segment in place
+        segs[existingIdx] = { kind: "tool", tc: updated };
+      } else {
+        // New tool call — push as a new segment
+        segs.push({ kind: "tool", tc: updated });
+      }
+      return { ...t, segments: segs };
+    });
   }
 
   private markTurnCompleted(turnId?: string) {

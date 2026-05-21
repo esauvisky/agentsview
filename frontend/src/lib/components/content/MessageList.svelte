@@ -23,50 +23,19 @@
   import { sessionActivity } from "../../stores/sessionActivity.svelte.js";
   import SessionFindBar from "./SessionFindBar.svelte";
   import { untrack } from "svelte";
-  import { liveSession } from "../../stores/liveSession.svelte.js";
+  import { liveSession, turnAssistantText, turnToolCalls } from "../../stores/liveSession.svelte.js";
+  import type { ProvisionalSegment } from "../../stores/liveSession.svelte.js";
   import { renderMarkdown } from "../../utils/markdown.js";
   import { displayToolName } from "../../utils/toolDisplay.js";
   import { formatDuration } from "../../utils/duration.js";
   import { liveTick } from "../../stores/liveTick.svelte.js";
+  import ToolBlock from "./ToolBlock.svelte";
 
   let containerRef: HTMLDivElement | undefined = $state(undefined);
   let scrollRaf: number | null = $state(null);
   let lastScrollRequest = 0;
-  let expandedToolCalls: Set<string> = $state(new Set());
-
-  function toggleToolCallDetail(itemId: string) {
-    const next = new Set(expandedToolCalls);
-    if (next.has(itemId)) next.delete(itemId);
-    else next.add(itemId);
-    expandedToolCalls = next;
-  }
-
-  function formatToolInput(tc: { tool_name: string; input_json?: string; category?: string }): string {
-    if (!tc.input_json) return "";
-    try {
-      const parsed = JSON.parse(tc.input_json);
-      if (tc.tool_name === "exec_command" && parsed.command) {
-        let s = `$ ${parsed.command}`;
-        if (parsed.cwd) s += `\n(cwd: ${parsed.cwd})`;
-        if (parsed.exitCode != null) s += `\n(exit code: ${parsed.exitCode})`;
-        return s;
-      }
-      if (tc.tool_name === "apply_patch") {
-        const parts: string[] = [];
-        if (parsed.filePath || parsed.path) parts.push(parsed.filePath ?? parsed.path);
-        if (parsed.changes) parts.push(parsed.changes);
-        if (parsed.reason) parts.push(`Reason: ${parsed.reason}`);
-        return parts.join("\n");
-      }
-      return JSON.stringify(parsed, null, 2);
-    } catch {
-      return tc.input_json;
-    }
-  }
-
-  function truncate(text: string, max: number): { text: string; truncated: boolean } {
-    if (text.length <= max) return { text, truncated: false };
-    return { text: text.slice(0, max), truncated: true };
+  function segmentKey(seg: ProvisionalSegment, index: number): string {
+    return seg.kind === "tool" ? seg.tc.itemId : `text-${index}`;
   }
 
   let baseMessages: Message[] = $derived.by(() =>
@@ -398,7 +367,9 @@
   // Auto-scroll when provisional content changes (new text/tool calls)
   $effect(() => {
     const totalContent = provisionalTurns.reduce(
-      (acc, t) => acc + t.assistantText.length + t.toolCalls.length,
+      (acc, t) => acc + t.segments.length + t.segments.reduce(
+        (s, seg) => s + (seg.kind === "text" ? seg.content.length : 1), 0,
+      ),
       0,
     );
     void totalContent;
@@ -506,6 +477,7 @@
 {#snippet provisionalSection()}
   <div class="provisional-section">
     {#each provisionalTurns as turn (turn.id)}
+      <!-- User message -->
       <div class="provisional-row">
         <div class="prov-message prov-is-user" style:border-left-color="var(--accent-blue)" style:background="var(--user-bg)">
           <div class="prov-message-header">
@@ -526,46 +498,43 @@
         </div>
       </div>
 
-      {#each turn.toolCalls as tc (tc.itemId)}
-        {@const hasDetail = !!(tc.toolCall.input_json || tc.toolCall.result_content)}
-        {@const isExpanded = expandedToolCalls.has(tc.itemId)}
-        <div class="provisional-row">
-          <div
-            class="provisional-tool"
-            class:provisional-tool-expandable={hasDetail}
-            onclick={() => hasDetail && toggleToolCallDetail(tc.itemId)}
-          >
-            {#if tc.status === "inProgress"}
-              <span class="provisional-spinner"></span>
-            {:else}
-              <span class="provisional-done">&#x2713;</span>
-            {/if}
-            <span class="provisional-tool-name">{displayToolName(tc.toolCall)}</span>
-            {#if tc.status === "inProgress"}
-              <span class="provisional-tool-dur">{formatDuration(Math.max(0, liveTick.now - tc.startedAt))}</span>
-            {/if}
-            {#if hasDetail}
-              <span class="provisional-tool-chevron" class:expanded={isExpanded}>&#x25B8;</span>
-            {/if}
-          </div>
-          {#if isExpanded}
-            <div class="provisional-tool-detail">
-              {#if tc.toolCall.input_json}
-                {@const input = formatToolInput(tc.toolCall)}
-                {#if input}
-                  <pre class="tool-detail-block">{input}</pre>
+      <!-- Interleaved assistant text and tool call segments -->
+      {#each turn.segments as seg, i (segmentKey(seg, i))}
+        {#if seg.kind === "text" && seg.content}
+          <div class="provisional-row">
+            <div class="prov-message" style:border-left-color="var(--accent-purple)" style:background="var(--assistant-bg)">
+              <div class="prov-message-header">
+                <span class="prov-role-icon" style:background="var(--accent-purple)">A</span>
+                <span class="prov-role-label" style:color="var(--accent-purple)">Assistant</span>
+                <div class="prov-header-meta">
+                  <span class="live-badge">live</span>
+                </div>
+              </div>
+              <div class="prov-message-body">
+                <div class="prov-text-content prov-markdown">{@html renderMarkdown(seg.content)}</div>
+                {#if turn.isStreaming && i === turn.segments.length - 1}
+                  <span class="stream-cursor"></span>
                 {/if}
-              {/if}
-              {#if tc.toolCall.result_content}
-                {@const result = truncate(tc.toolCall.result_content, 500)}
-                <pre class="tool-detail-block tool-detail-result">{result.text}{#if result.truncated}...{/if}</pre>
-              {/if}
+              </div>
             </div>
-          {/if}
-        </div>
+          </div>
+        {:else if seg.kind === "tool"}
+          <div class="provisional-row">
+            <ToolBlock
+              toolCall={seg.tc.toolCall}
+              content=""
+              label={displayToolName(seg.tc.toolCall)}
+              durationLabel={seg.tc.status === "inProgress"
+                ? formatDuration(Math.max(0, liveTick.now - seg.tc.startedAt))
+                : undefined}
+              isRunning={seg.tc.status === "inProgress"}
+            />
+          </div>
+        {/if}
       {/each}
 
-      {#if turn.assistantText || (turn.isStreaming && turn.toolCalls.length === 0)}
+      <!-- Awaiting response: streaming with no segments yet -->
+      {#if turn.isStreaming && turn.segments.length === 0}
         <div class="provisional-row">
           <div class="prov-message" style:border-left-color="var(--accent-purple)" style:background="var(--assistant-bg)">
             <div class="prov-message-header">
@@ -576,12 +545,7 @@
               </div>
             </div>
             <div class="prov-message-body">
-              {#if turn.assistantText}
-                <div class="prov-text-content prov-markdown">{@html renderMarkdown(turn.assistantText)}</div>
-              {/if}
-              {#if turn.isStreaming}
-                <span class="stream-cursor"></span>
-              {/if}
+              <span class="stream-cursor"></span>
             </div>
           </div>
         </div>
@@ -750,94 +714,9 @@
     animation: live-pulse 2s ease-in-out infinite;
   }
 
-  .provisional-tool {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 20px;
-    font-size: 13px;
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
-  }
-
-  .provisional-tool-expandable {
-    cursor: pointer;
-    border-radius: 4px;
-  }
-
-  .provisional-tool-expandable:hover {
-    background: var(--bg-surface-hover, var(--bg-tertiary));
-  }
-
-  .provisional-tool-name {
-    color: var(--text-primary);
-  }
-
-  .provisional-tool-dur {
-    color: var(--text-muted);
-    font-size: 11px;
-  }
-
-  .provisional-done {
-    color: var(--accent-green, #3fb950);
-    font-size: 13px;
-  }
-
-  .provisional-tool-chevron {
-    font-size: 10px;
-    color: var(--text-muted);
-    transition: transform 0.15s;
-    margin-left: auto;
-  }
-
-  .provisional-tool-chevron.expanded {
-    transform: rotate(90deg);
-  }
-
-  .provisional-tool-detail {
-    padding: 4px 20px 4px 44px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .tool-detail-block {
-    font-size: 12px;
-    font-family: var(--font-mono);
-    background: var(--bg-default);
-    border: 1px solid var(--border-muted);
-    border-radius: 4px;
-    padding: 6px 8px;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 200px;
-    overflow-y: auto;
-    margin: 0;
-  }
-
-  .tool-detail-result {
-    border-left: 2px solid var(--accent-green, #3fb950);
-  }
-
   .provisional-meta {
     font-size: 11px;
     color: var(--text-muted);
-  }
-
-  @keyframes provisional-spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .provisional-spinner {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-muted);
-    border-top-color: var(--accent-blue);
-    border-radius: 50%;
-    animation: provisional-spin 0.7s linear infinite;
-    flex-shrink: 0;
   }
 
   @keyframes stream-blink {
