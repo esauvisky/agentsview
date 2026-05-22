@@ -47,6 +47,7 @@ type codexSessionBuilder struct {
 	pendingAgentEvents   map[string][]codexPendingEvent
 	orphanNotificationIx map[string]int
 	lastTokenUsageRaw    string // dedup streaming duplicates
+	threadSource         string // "subagent" for guardian/auto-review sessions
 
 	// Most recent task lifecycle event seen on the file. Used to
 	// classify termination_status — task_complete maps to
@@ -120,6 +121,7 @@ func (b *codexSessionBuilder) handleSessionMeta(
 	payload gjson.Result,
 ) (skip bool) {
 	b.sessionID = payload.Get("id").Str
+	b.threadSource = payload.Get("thread_source").Str
 
 	if cwd := payload.Get("cwd").Str; cwd != "" {
 		branch := payload.Get("git.branch").Str
@@ -1190,11 +1192,17 @@ func ParseCodexSession(
 		}
 	}
 
+	var relType RelationshipType
+	if b.threadSource == "subagent" {
+		relType = RelSubagent
+	}
+
 	sess := &ParsedSession{
 		ID:                sessionID,
 		Project:           b.project,
 		Machine:           machine,
 		Agent:             AgentCodex,
+		RelationshipType:  relType,
 		FirstMessage:      b.firstMessage,
 		StartedAt:         b.startedAt,
 		EndedAt:           b.endedAt,
