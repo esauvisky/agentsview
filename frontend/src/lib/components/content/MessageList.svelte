@@ -364,18 +364,23 @@
     }
   });
 
-  // Scroll to bottom when live session connects
-  let prevLiveState: string | undefined;
+  // Scroll to end when session messages finish loading
+  let prevLoading = true;
   $effect(() => {
-    const s = liveSession.state?.state;
-    if (s && s !== "offline" && s !== "dead" && prevLiveState !== s && containerRef) {
-      if (prevLiveState === undefined || prevLiveState === "offline" || prevLiveState === "dead") {
-        requestAnimationFrame(() => {
-          if (containerRef) containerRef.scrollTop = containerRef.scrollHeight;
-        });
-      }
+    const loading = messages.loading;
+    const sid = sessions.activeSessionId;
+    void sid; // track session changes
+    if (prevLoading && !loading && containerRef && ui.pendingScrollOrdinal === null) {
+      requestAnimationFrame(() => {
+        if (!containerRef) return;
+        if (ui.sortNewestFirst) {
+          containerRef.scrollTop = 0;
+        } else {
+          containerRef.scrollTop = containerRef.scrollHeight;
+        }
+      });
     }
-    prevLiveState = s;
+    prevLoading = loading;
   });
 
   // Auto-scroll when provisional content changes (new text/tool calls)
